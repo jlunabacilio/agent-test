@@ -1,16 +1,28 @@
 import os
 import boto3
 import uuid
+from flask import Flask, request, jsonify
+from flask_cors import CORS
 from dotenv import load_dotenv
+import logging
+
+# Configurar logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 load_dotenv()
+
+# Crear aplicación Flask
+app = Flask(__name__)
+CORS(app)  # Permitir CORS para el frontend
 
 # Verificar variables críticas para agentes personalizados de Bedrock
 required_vars = ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_REGION', 'BEDROCK_AGENT_ID']
 missing_vars = [var for var in required_vars if not os.getenv(var)]
 
 if missing_vars:
-    raise ValueError(f"Variables de entorno faltantes: {missing_vars}")
+    logger.error(f"Missing environment variables: {missing_vars}")
+    raise ValueError(f"Missing environment variables: {missing_vars}")
 
 class BedrockCustomAgent:
     def __init__(self):
@@ -26,7 +38,7 @@ class BedrockCustomAgent:
         self.agent_alias_id = os.getenv('BEDROCK_AGENT_ALIAS_ID')
     
     def invoke(self, prompt):
-        """Invocar el agente personalizado de Bedrock"""
+        """Invoke the custom Bedrock agent"""
         try:
             response = self.bedrock_agent_runtime.invoke_agent(
                 agentId=self.agent_id,
@@ -47,24 +59,68 @@ class BedrockCustomAgent:
             return full_response
             
         except Exception as e:
-            raise Exception(f"Error invocando agente personalizado: {e}")
+            logger.error(f"Error invoking custom agent: {e}")
+            raise Exception(f"Error invoking custom agent: {e}")
 
 # Inicializar agente personalizado
 custom_agent = BedrockCustomAgent()
 
-try:
-    # Generar respuesta usando agente personalizado de Bedrock
-    response = custom_agent.invoke("Hello, how can you assist me today? I need help generating user stories for a web application.")
-    
-    print("Respuesta del agente personalizado de Bedrock:")
-    print("="*50)
-    print(response)
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Endpoint to verify that the server is running"""
+    return jsonify({
+        'status': 'ok',
+        'message': 'Bedrock Agent API is running',
+        'agent_id': os.getenv('BEDROCK_AGENT_ID'),
+        'region': os.getenv('AWS_REGION')
+    })
 
-except Exception as e:
-    print(f"Error generando respuesta: {e}")
-    print("Verifica que:")
-    print("1. Tus credenciales AWS sean válidas")
-    print("2. Tengas permisos para usar Bedrock Agents")
-    print("3. El Agent ID y Alias ID sean correctos")
-    print("4. La región sea la correcta")
-    print("5. La librería strands-agents esté instalada correctamente")
+@app.route('/chat', methods=['POST'])
+def chat():
+    """Endpoint to interact with the Bedrock agent"""
+    try:
+        data = request.get_json()
+        
+        if not data or 'message' not in data:
+            return jsonify({'error': 'The "message" field is required'}), 400
+        
+        message = data['message']
+        logger.info(f"Received message: {message}")
+        
+        # Invoke the agent
+        response = custom_agent.invoke(message)
+        
+        return jsonify({
+            'response': response,
+            'status': 'success'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error processing request: {e}")
+        return jsonify({
+            'error': str(e),
+            'status': 'error'
+        }), 500
+
+@app.route('/examples', methods=['GET'])
+def get_examples():
+    """Get example prompts for testing"""
+    examples = [
+        "Hello, how can you assist me today?",
+        "Help me generate user stories for a web application"
+    ]
+    
+    return jsonify({
+        'examples': examples,
+        'status': 'success'
+    })
+
+if __name__ == '__main__':
+    print("Starting Bedrock Agent API server...")
+    print("Please verify that:")
+    print("1. Your AWS credentials are valid")
+    print("2. You have permissions to use Bedrock Agents")
+    print("3. The Agent ID and Alias ID are correct")
+    print("4. The region is correct")
+    print("="*50)
+    app.run(debug=True, host='0.0.0.0', port=5000)
