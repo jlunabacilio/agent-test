@@ -1,0 +1,6 @@
+# Librerías paraagentes personalizados de Bedrock
+boto3
+python-dotenv
+
+# Opcional: Si quieres usar Strands para otros casos
+# strands-agents>=0.1.0
